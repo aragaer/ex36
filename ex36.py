@@ -18,6 +18,7 @@ power = level
 inventory = []
 
 DIRECTIONS = ['north', 'south', 'east', 'west', 'up', 'down']
+STAIRS = DIRECTIONS.index('up') # lowest number of direction which is described using "stairs <to>"
 N_DIRS = len(DIRECTIONS)
 
 def get_opposite_direction(d):
@@ -39,6 +40,9 @@ def debug(string):
 class Monster:
     """A monster!"""
 
+class Curse:
+    """A curse!"""
+
 class Room:
     types = ['hall', 'cave', 'room']
     sizes = ['huge', 'large', 'average-sized', 'small', 'tiny']
@@ -46,8 +50,11 @@ class Room:
     def __init__(self, entrance = -1):
         global n_doors
         self.doors = DIRECTIONS[:]
-        possible_doors = self.doors[:]
-        new_doors = random.randint(0, N_DIRS)
+        possible_doors = range(0, N_DIRS)
+        new_doors = random.randint(max(0, MIN_DOORS - n_doors), min(N_DIRS, MAX_DOORS - n_doors))
+
+#        debug("min %d max %d got %d" % (MIN_DOORS, MAX_DOORS, n_doors))
+#        debug("random from %d to %d gives %d" % (max(0, MIN_DOORS - n_doors), min(N_DIRS, MAX_DOORS - n_doors), new_doors))
 
         if entrance == -1:
             old_door = 0
@@ -67,9 +74,30 @@ class Room:
         n_doors += new_doors
         n_walls = N_DIRS - new_doors - old_door
 
-        for wall in random.sample(possible_doors, n_walls):
-            idx = self.doors.index(wall)
-            del self.doors[idx]
+        try:
+         for wall in random.sample(possible_doors, n_walls):
+            self.doors[wall] = None
+        except Exception as exc:
+            debug("Exception: %s\npossible_doors = %s\nn_walls = %d" % (exc, possible_doors, n_walls))
+
+#        debug("self doors: [%r]" % self.doors)
+#        debug("%d unexplored doors" % n_doors)
+        have_doors = filter(None, self.doors[:STAIRS])
+        have_stairs = filter(None, self.doors[STAIRS:])
+
+        self.doors = have_doors + have_stairs
+
+        d_desc = ['There']
+
+        if have_doors:
+            d_desc.append('is a door' if len(have_doors) == 1 else 'are doors')
+            d_desc.append('leading %s' % nice_print_list(have_doors))
+
+        if have_stairs:
+            d_desc.append('and' if have_doors else 'are')
+            d_desc.append('stairs leading %s' % nice_print_list(have_stairs))
+
+        self.d_desc = ' '.join(d_desc)                
 
         t = random.choice(Room.types)
         s = random.choice(Room.sizes)
@@ -78,13 +106,14 @@ class Room:
         else:
             self.desc = "%s %s" % (s, t)
 
-        self.d_desc = nice_print_list(self.doors)
-
-        obstacle = random.choice([MONSTERS, CURSES, None])
-        if obstacle == None or len(obstacle) == 0: # temporary safeguard
+        if entrance:
+            obstacle = random.choice([MONSTERS, CURSES, None])
+            if obstacle == None or len(obstacle) == 0:  # temporary safeguard
+                self.obstacle = None
+            else:
+                self.obstacle = random.choice(obstacle)
+        else:                                           # starting room must be empty
             self.obstacle = None
-        else:
-            self.obstacle = random.choice(obstacle)
 
     def getObstacle(self):
         if self.obstacle == None:
@@ -92,24 +121,42 @@ class Room:
         elif isinstance(self.obstacle, Monster):
             return self.obstacle.getDesc()
 
-def print_room():
+def print_room(unused = None):
     print "You are in a %s" % current_room.desc
-    print "There are doors to the %s" % current_room.d_desc
+    print current_room.d_desc
     print "There is %s here." % current_room.getObstacle()
 
-def print_inventory():
+def print_inventory(unused):
     if len(inventory):
         print "You have %s" % nice_print_list(inventory)
     else:
         print "You have nothing"
 
-def print_actions():
+CMD_GO = 'go'
+CMD_FIGHT = 'attack'
+CMD_LOOK = 'look'
+CMD_INV = 'inventory'
+CMD_HELP = 'help'
+
+def print_actions(unused):
     print "You can do the following:"
     for d in current_room.doors:
-        print "- go", d
+        print "-", CMD_GO, d
+    if isinstance(current_room.obstacle, Monster):
+        print "-", CMD_FIGHT, current_room.obstacle.name
 
 def move_to(d):
     global current_room, n_doors
+    if len(d) != 1:
+        print "Huh?"
+        return
+
+    d = d.pop()
+
+    if d not in DIRECTIONS:
+        print "Huh?!"
+        return
+
     if d not in current_room.doors:
         print "You bump into a wall."
         return
@@ -119,18 +166,31 @@ def move_to(d):
     except:
         n_doors -= 1
         current_room = Room(DIRECTIONS.index(d))
+        rooms.append(current_room)
+    print_room()
+
+COMMANDS = {
+    CMD_GO: move_to,
+    CMD_FIGHT: None,
+    CMD_LOOK: print_room,
+    CMD_INV: print_inventory,
+    CMD_HELP: print_actions
+}
 
 def do_turn():
-    print_room()
-    print_inventory()
-    print_actions()
-    action = raw_input("> ");
+    action = raw_input("> ").split(' ');
+    print
 
-    if action.startswith("go "):
-        move_to(action[3:])
+    act = action.pop(0)
+    if COMMANDS[act] and callable(COMMANDS[act]):
+        COMMANDS[act](action)
+    else:
+        print "You have no idea how to do that"
 
 if __name__ == "__main__":
     current_room = Room()
     rooms = [current_room]
+    print_room()
     while level < LEVEL_TO_WIN:
         do_turn()
+    print "Congratulations! You are level %d! You won!" % level
