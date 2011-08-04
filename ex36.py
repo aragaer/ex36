@@ -16,14 +16,10 @@ CURSES = []
 TREASURES = []
 
 level = 1
-power = level
+bonus = 0
 inventory = []
 gold = 0
-slots = {
-    'headgear': None,
-    'armor': None,
-    'footwear': None,
-}
+slots = {'headgear': None, 'armor': None, 'footwear': None}
 free_hands = 2
 
 DIRECTIONS = ['north', 'south', 'east', 'west', 'up', 'down']
@@ -33,14 +29,9 @@ N_DIRS = len(DIRECTIONS)
 def get_opposite_direction(d):
     return d - 1 if d % 2 else d + 1
 
-def get_opposite_dir_name(d):
-    return DIRECTIONS[get_opposite_direction(d)]
-
 def nice_print_list(l):
-    if len(l) > 2:
-        return " and ".join([", ".join(l[:-1]), l[-1]])
-    else:
-        return " and ".join(l)
+    tail = l.pop()
+    return ' and '.join(filter(None, [', '.join(l), tail]))
 
 def nice_parse_list(n):
     if type(n).__name__ == 'list':
@@ -56,7 +47,7 @@ def nice_parse_list(n):
 
 def debug(string):
     if dbg:
-        print "DBG:", string
+        print 'DBG:', string
 
 class ImmediateTreasure:
     """Treasures that are triggered immediately"""
@@ -64,12 +55,14 @@ class ImmediateTreasure:
         self.name = name
         self.desc = desc
         self.effect = effect
+    def __str__(self):
+        return self.name
 
 class EquipmentTreasure:
     """These are equipped"""
     def __init__(self, name, desc, cost, bonus, slot, is_large = False):
         self.name = name
-        self.desc = desc
+        self.desc = desc if desc else "It's just a %s" % name
         self.bonus = bonus
         self.cost = cost
         self.slot = slot
@@ -82,10 +75,7 @@ class EquipmentTreasure:
             self.need_hands = 0
         self.equipped = False
     def __str__(self):
-        if self.equipped:
-            return self.name + ' (equipped)'
-        else:
-            return self.name
+        return self.name + (' (equipped)' if self.equipped else '')
 
 class Monster:
     """A monster!"""
@@ -124,11 +114,8 @@ class Room:
         n_doors += new_doors
         n_walls = N_DIRS - new_doors - old_door
 
-        try:
-         for wall in random.sample(possible_doors, n_walls):
+        for wall in random.sample(possible_doors, n_walls):
             self.doors[wall] = None
-        except Exception as exc:
-            debug("Exception: %s\npossible_doors = %s\nn_walls = %d" % (exc, possible_doors, n_walls))
 
 #        debug("self doors: [%r]" % self.doors)
 #        debug("%d unexplored doors" % n_doors)
@@ -140,7 +127,7 @@ class Room:
         d_desc = ['There']
 
         if have_doors:
-            d_desc.append('is a door' if len(have_doors) == 1 else 'are doors')
+            d_desc.append('are doors' if new_doors else 'is a door')
             d_desc.append('leading %s' % nice_print_list(have_doors))
 
         if have_stairs:
@@ -174,14 +161,11 @@ def print_room(unused = None):
     print "There is %s here." % current_room.getObstacle()
 
 def print_inventory(unused = None):
-    stuff = map(lambda x: x.__str__(), inventory)
+    stuff = map(str, inventory)
     if gold:
         stuff.append("%d gold" % gold)
 
-    if stuff:
-        print "You have %s" % nice_print_list(stuff)
-    else:
-        print "You have nothing"
+    print 'You have', nice_print_list(stuff) if stuff else 'nothing'
 
 def get_treasure(number):
     global inventory
@@ -191,18 +175,15 @@ def get_treasure(number):
         new_stuff += random.sample(TREASURES, sample)
         number -= sample    
 
-    print "You found", nice_print_list(map(lambda x: x.name, new_stuff))
+    print "You found", nice_print_list(map(str, new_stuff))
 
-    immediates = []
     for item in new_stuff:
         if isinstance(item, ImmediateTreasure):
-            immediates.append(item)
+            print item.desc
+            item.effect()
         else:
             inventory.append(copy(item))
 
-    for item in immediates:
-        print item.desc
-        item.effect()
 
 CMD_GO = 'go'
 CMD_FIGHT = 'attack'
@@ -213,6 +194,7 @@ CMD_ITEM = 'examine'
 CMD_EQUIP = 'equip'
 CMD_UNEQUIP = 'unequip'
 CMD_SELL = 'sell'
+CMD_SELF = 'status'
 
 def print_actions(unused):
     print "You can do the following:"
@@ -267,24 +249,16 @@ If equipped is not none and we can't find it, find the one ignoring the flag."""
 
 def examine(name):
     item = get_inv_item(name)
-    if not item:
-        print "You don't have any %s to examine" % name
-        return
-
-    print "You examine %s" % name
-    if item.desc:
+    if item:
+        print "You examine %s" % name
         print item.desc
+        print "It is worth", "%d gold" % item.cost if item.cost else "nothing"
     else:
-        print "It is just a", item.name
-
-    if item.cost:
-        print "It is worth %d gold" % item.cost
-    else:
-        print "It is worth nothing"
+        print "You don't have any %s to examine" % name
     print
 
 def equip(name):
-    global power, free_hands
+    global bonus, free_hands
     item = get_inv_item(name, False)
     if not item:
         print "You got no %s to equip" % name
@@ -297,7 +271,7 @@ def equip(name):
     if item.slot is None:
         print "You equip %s" % name
         item.equipped = True
-        power += item.bonus
+        bonus += item.bonus
         return
 
     if item.need_hands == 0:
@@ -308,7 +282,7 @@ def equip(name):
             print "You equip %s as %s" % (name, item.slot)
             slots[item.slot] = item
             item.equipped = True
-            power += item.bonus
+            bonus += item.bonus
         return
 
     if free_hands < item.need_hands:
@@ -321,11 +295,11 @@ def equip(name):
     free_hands -= item.need_hands
 
     print "You equip %s" % name
-    power += item.bonus
+    bonus += item.bonus
     item.equipped = True
 
 def unequip(name):
-    global power, free_hands
+    global bonus, free_hands
     item = get_inv_item(name, True)
     if not item:
         print "You got no %s to unequip" % name
@@ -337,7 +311,7 @@ def unequip(name):
 
     print "You put %s to your backpack" % name
     item.equipped = False
-    power -= item.bonus
+    bonus -= item.bonus
     if item.need_hands:
         free_hands += item.need_hands
     else:
@@ -354,13 +328,12 @@ def sell(name):
         print "%s is equipped" % name
         return
 
+    inventory.remove(item)
     if not item.cost:
         print "%s is wortheless. You threw it away." % name
         return
 
     levels = (gold + item.cost) // 1000 - gold // 1000
-
-    inventory.remove(item)
     gold += item.cost
 
     print "Sold %s! You have %d gold now" % (name, gold)
@@ -369,6 +342,9 @@ def sell(name):
         print "You go up a level"
     elif levels:
         print "You go up %d levels" % levels
+
+def status(unused = None):
+    print "You are level %d. Your combat strength is %d." % (level, level + bonus)
 
 def mass(func):
     return lambda names: [func(name) for name in nice_parse_list(names)]
@@ -381,7 +357,8 @@ COMMANDS = {
     CMD_ITEM: mass(examine),
     CMD_EQUIP: mass(equip),
     CMD_UNEQUIP: mass(unequip),
-    CMD_SELL: mass(sell)
+    CMD_SELL: mass(sell),
+    CMD_SELF: status
 }
 
 def do_turn():
