@@ -12,10 +12,12 @@ current_room = None
 
 MONSTERS = []
 CURSES = []
+TREASURES = []
 
 level = 1
 power = level
 inventory = []
+gold = 0
 
 DIRECTIONS = ['north', 'south', 'east', 'west', 'up', 'down']
 STAIRS = DIRECTIONS.index('up') # lowest number of direction which is described using "stairs <to>"
@@ -36,6 +38,23 @@ def nice_print_list(l):
 def debug(string):
     if dbg:
         print "DBG:", string
+
+class ImmediateTreasure:
+    """Treasures that are triggered immediately"""
+    def __init__(self, name, desc, effect):
+        self.name = name
+        self.desc = desc
+        self.effect = effect
+
+class EquipmentTreasure:
+    """These are equipped"""
+    def __init__(self, name, desc, cost, bonus, slot, is_large = False):
+        self.name = name
+        self.desc = desc
+        self.bonus = bonus
+        self.cost = cost
+        self.slot = slot
+        self.is_large = is_large
 
 class Monster:
     """A monster!"""
@@ -126,11 +145,36 @@ def print_room(unused = None):
     print current_room.d_desc
     print "There is %s here." % current_room.getObstacle()
 
-def print_inventory(unused):
-    if len(inventory):
-        print "You have %s" % nice_print_list(inventory)
+def print_inventory(unused = None):
+    stuff = map(lambda x: x.name, inventory)
+    if gold:
+        stuff.append("%d gold" % gold)
+
+    if stuff:
+        print "You have %s" % nice_print_list(stuff)
     else:
         print "You have nothing"
+
+def get_treasure(number):
+    global inventory
+    new_stuff = []
+    while (number):
+        sample = min(number, len(TREASURES))
+        new_stuff += random.sample(TREASURES, sample)
+        number -= sample    
+
+    print "You found", nice_print_list(map(lambda x: x.name, new_stuff))
+
+    immediates = []
+    for item in new_stuff:
+        if isinstance(item, ImmediateTreasure):
+            immediates.append(item)
+        else:
+            inventory.append(item)
+
+    for item in immediates:
+        print item.desc
+        item.effect()
 
 CMD_GO = 'go'
 CMD_FIGHT = 'attack'
@@ -148,13 +192,13 @@ def print_actions(unused):
 def move_to(d):
     global current_room, n_doors
     if len(d) != 1:
-        print "Huh?"
+        print "Go where?"
         return
 
     d = d.pop()
 
     if d not in DIRECTIONS:
-        print "Huh?!"
+        print "You can't go there!"
         return
 
     if d not in current_room.doors:
@@ -188,9 +232,17 @@ def do_turn():
         print "You have no idea how to do that"
 
 if __name__ == "__main__":
+    with open("game.conf") as conf:
+        for line in conf.readlines():
+            (name, val) = map(lambda s: s.strip(), line.split('='))
+            if name == 'treasures':
+                for tfile in val.split(','):
+                    execfile(tfile.strip())
+
     current_room = Room()
     rooms = [current_room]
     print_room()
+    get_treasure(4)
     while level < LEVEL_TO_WIN:
         do_turn()
     print "Congratulations! You are level %d! You won!" % level
