@@ -265,13 +265,18 @@ If equipped is not none and we can't find it, find the one ignoring the flag."""
 
     return None
 
-def examine(name):
-    name = ' '.join(name)
+def examine(name_parts):
+    for name in nice_parse_list(name_parts):
+        do_examine(name.strip())
+
+def do_examine(name):
     item = get_inv_item(name)
     if not item:
-        print "You don't have any", name
+        print "You don't have any %s to examine" % name
         return
-    elif item.desc:
+
+    print "You examine %s" % name
+    if item.desc:
         print item.desc
     else:
         print "It is just a", item.name
@@ -280,6 +285,7 @@ def examine(name):
         print "It is worth %d gold" % item.cost
     else:
         print "It is worth nothing"
+    print
 
 def equip(name_parts):
     for name in nice_parse_list(name_parts):
@@ -362,6 +368,10 @@ def do_sell(name):
 
     if item.equipped:
         print "%s is equipped" % name
+        return
+
+    if not item.cost:
+        print "%s is wortheless. You threw it away." % name
         return
 
     levels = (gold + item.cost) // 1000 - gold // 1000
