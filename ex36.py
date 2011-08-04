@@ -10,6 +10,7 @@ LEVEL_TO_WIN = 10
 
 n_doors = 0
 current_room = None
+last_entrance = None
 
 MONSTERS = []
 CURSES = []
@@ -79,6 +80,21 @@ class EquipmentTreasure:
 
 class Monster:
     """A monster!"""
+    def defaultHostile():
+        return True
+    def defaultRA():
+        return random.randint(1, 6) > 4
+    def __init__(self, name, level, treasure, bad, exp = 1,
+                hostile = defaultHostile, ra = defaultRA):
+        self.name = name
+        self.level = level
+        self.treasure = treasure
+        self.bad = bad
+        self.exp = exp
+        self.hostile = hostile
+        self.ra = ra
+    def getDesc(self):
+        return self.name
 
 class Curse:
     """A curse!"""
@@ -114,10 +130,13 @@ class Room:
         n_doors += new_doors
         n_walls = N_DIRS - new_doors - old_door
 
-        for wall in random.sample(possible_doors, n_walls):
+        try:
+          for wall in random.sample(possible_doors, n_walls):
             self.doors[wall] = None
+        except ValueError as ve:
+            debug("picking %d walls from %s: %s" % (n_walls, possible_doors, ve))
 
-#        debug("self doors: [%r]" % self.doors)
+        debug("self doors: [%r]" % self.doors)
 #        debug("%d unexplored doors" % n_doors)
         have_doors = filter(None, self.doors[:STAIRS])
         have_stairs = filter(None, self.doors[STAIRS:])
@@ -143,17 +162,26 @@ class Room:
         else:
             self.desc = "%s %s" % (s, t)
 
-        if entrance:
+        if entrance == -1:                          # starting room must be empty
+            self.obstacle = None
+        else:
             obstacle = random.choice([MONSTERS, CURSES, None])
             self.obstacle = random.choice(obstacle) if obstacle else None
-        else:                                           # starting room must be empty
-            self.obstacle = None
 
     def getObstacle(self):
         if self.obstacle == None:
             return "nothing"
         elif isinstance(self.obstacle, Monster):
             return self.obstacle.getDesc()
+
+def dead(why):
+    print why
+    print "You are dead. Game over."
+    exit(0)
+
+def win():
+    print "Congratulations! You are level %d! You won!" % level
+    exit(0)
 
 def print_room(unused = None):
     print "You are in a %s" % current_room.desc
@@ -195,6 +223,7 @@ CMD_EQUIP = 'equip'
 CMD_UNEQUIP = 'unequip'
 CMD_SELL = 'sell'
 CMD_SELF = 'status'
+CMD_ATTACK = 'attack'
 
 def print_actions(unused):
     print "You can do the following:"
@@ -203,8 +232,46 @@ def print_actions(unused):
     if isinstance(current_room.obstacle, Monster):
         print "-", CMD_FIGHT, current_room.obstacle.name
 
+def attack(monster_name):
+    """used to attack non-hostile monsters"""
+    name = ' '.join(monster_name)
+    try:
+        if name != current_room.obstacle.name:
+            raise
+    except:
+        print "There is no %s to attack here" % name
+    else:
+        battle(current_room.obstacle)
+
+def battle(monster):
+    global current_room, level
+    if monster.level < level + bonus:
+        print "You easily dispatch %s" % monster.name
+        level += monster.exp
+        if level >= LEVEL_TO_WIN:
+            win()
+        current_room.obstacle = None
+        get_treasure(monster.treasure)
+    else:
+        back = DIRECTIONS[last_entrance]
+        print "You can't win and have to run back %s from %s" % (back, monster.name)
+        if monster.ra():
+            print "You ran away succesfully"
+            move_to([DIRECTIONS[last_entrance]])
+        else:
+            print "You failed to run away!"
+            monster.bad()
+            print "Monster goes away"
+            current_room.obstacle = None
+
+def encounter(monster):
+    if monster.hostile():
+        battle(monster)
+    else:
+        print "%s is not hostile" % monster.name
+
 def move_to(d):
-    global current_room, n_doors
+    global current_room, n_doors, last_entrance
     if len(d) != 1:
         print "Go where?"
         return
@@ -214,6 +281,8 @@ def move_to(d):
     if d not in DIRECTIONS:
         print "You can't go there!"
         return
+
+    didx = DIRECTIONS.index(d)
 
     if d not in current_room.doors:
         if d == 'up':
@@ -228,9 +297,23 @@ def move_to(d):
         current_room = getattr(current_room, d)
     except:
         n_doors -= 1
-        current_room = Room(DIRECTIONS.index(d))
+        current_room = Room(didx)
         rooms.append(current_room)
+    last_entrance = get_opposite_direction(didx)
     print_room()
+    debug("You entered from %s" % DIRECTIONS[last_entrance])
+
+    if isinstance(current_room.obstacle, Monster):
+        encounter(current_room.obstacle)
+
+def fix_level():
+    global level
+    if level >= LEVEL_TO_WIN:
+        print "Too bad you have to defeat a monster to get last level"
+        level = LEVEL_TO_WIN - 1
+    elif level < 1:
+        print "Lucky you, can't go below level 1"
+        level = 1
 
 def get_inv_item(name, equipped = None):
     """Tries to find an item.
@@ -299,7 +382,6 @@ def equip(name):
     item.equipped = True
 
 def unequip(name):
-    global bonus, free_hands
     item = get_inv_item(name, True)
     if not item:
         print "You got no %s to unequip" % name
@@ -310,6 +392,10 @@ def unequip(name):
         return
 
     print "You put %s to your backpack" % name
+    unequip_internal(item)
+
+def unequip_internal(item):
+    global bonus, free_hands
     item.equipped = False
     bonus -= item.bonus
     if item.need_hands:
@@ -358,10 +444,13 @@ COMMANDS = {
     CMD_EQUIP: mass(equip),
     CMD_UNEQUIP: mass(unequip),
     CMD_SELL: mass(sell),
-    CMD_SELF: status
+    CMD_SELF: status,
+    CMD_ATTACK: attack,
 }
 
 def do_turn():
+    fix_level()
+
     action = raw_input("> ").split(' ');
     print
 
@@ -383,6 +472,5 @@ if __name__ == "__main__":
     rooms = [current_room]
     print_room()
     get_treasure(4)
-    while level < LEVEL_TO_WIN:
+    while True:
         do_turn()
-    print "Congratulations! You are level %d! You won!" % level
