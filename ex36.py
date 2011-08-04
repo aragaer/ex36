@@ -1,4 +1,5 @@
 import random
+from copy import copy
 dbg = True
 
 # these numbers determine the minimum and maximum numbers of yet unopened doors
@@ -18,6 +19,12 @@ level = 1
 power = level
 inventory = []
 gold = 0
+slots = {
+    'headgear': None,
+    'armor': None,
+    'footwear': None,
+}
+free_hands = 2
 
 DIRECTIONS = ['north', 'south', 'east', 'west', 'up', 'down']
 STAIRS = DIRECTIONS.index('up') # lowest number of direction which is described using "stairs <to>"
@@ -55,6 +62,18 @@ class EquipmentTreasure:
         self.cost = cost
         self.slot = slot
         self.is_large = is_large
+        if slot == 'hand':
+            self.need_hands = 1
+        elif slot == 'two hands':
+            self.need_hands = 2
+        else:
+            self.need_hands = 0
+        self.equipped = False
+    def __str__(self):
+        if self.equipped:
+            return self.name + '(equipped)'
+        else:
+            return self.name
 
 class Monster:
     """A monster!"""
@@ -127,7 +146,7 @@ class Room:
 
         if entrance:
             obstacle = random.choice([MONSTERS, CURSES, None])
-            if obstacle == None or len(obstacle) == 0:  # temporary safeguard
+            if not obstacle:
                 self.obstacle = None
             else:
                 self.obstacle = random.choice(obstacle)
@@ -146,7 +165,7 @@ def print_room(unused = None):
     print "There is %s here." % current_room.getObstacle()
 
 def print_inventory(unused = None):
-    stuff = map(lambda x: x.name, inventory)
+    stuff = map(lambda x: x.__str__(), inventory)
     if gold:
         stuff.append("%d gold" % gold)
 
@@ -170,7 +189,7 @@ def get_treasure(number):
         if isinstance(item, ImmediateTreasure):
             immediates.append(item)
         else:
-            inventory.append(item)
+            inventory.append(copy(item))
 
     for item in immediates:
         print item.desc
@@ -181,6 +200,9 @@ CMD_FIGHT = 'attack'
 CMD_LOOK = 'look'
 CMD_INV = 'inventory'
 CMD_HELP = 'help'
+CMD_ITEM = 'examine'
+CMD_EQUIP = 'equip'
+CMD_UNEQUIP = 'unequip'
 
 def print_actions(unused):
     print "You can do the following:"
@@ -213,12 +235,107 @@ def move_to(d):
         rooms.append(current_room)
     print_room()
 
+def get_inv_item(name, equipped = None):
+    """Tries to find an item.
+If equipped is None, we don't care if it is equipped, otherwise try to get as requested.
+If equipped is not none and we can't find it, find the one ignoring the flag."""
+    if not equipped is None:
+        for item in inventory:
+            if item.name == name and item.equipped == equipped:
+                return item
+
+    for item in inventory:
+        if item.name == name:
+            return item
+
+    return None
+
+def examine(name):
+    name = ' '.join(name)
+    item = get_inv_item(name)
+    if not item:
+        print "You don't have any", name
+        return
+    elif item.desc:
+        print item.desc
+    else:
+        print "It is just a", item.name
+
+    if item.cost:
+        print "It is worth %d gold" % item.cost
+    else:
+        print "It is worth nothing"
+
+def equip(name):
+    global power, free_hands
+    name = ' '.join(name)
+    item = get_inv_item(name, False)
+    if not item:
+        print "You got no %s" % name
+        return
+
+    if item.equipped:
+        print "%s is already equipped" % name
+        return
+
+    if item.slot is None:
+        print "You equip %s" % name
+        item.equipped = True
+        power += item.bonus
+        return
+
+    if item.need_hands == 0:
+        other = slots[item.slot]
+        if other:
+            print "You can't equip %s since you already got %s as %s" % (name, other.name, item.slot)
+        else:
+            print "You equip %s as %s" % (name, item.slot)
+            slots[item.slot] = item
+            item.equipped = True
+            power += item.bonus
+        return
+
+    if free_hands < item.need_hands:
+        if item.need_hands == 1:
+            print "You need a free hand to hold %s" % name
+        else:
+            print "You need %d free hands to hold %s and you have %d" % (item.need_hands, name, free_hands)
+        return
+
+    free_hands -= item.need_hands
+
+    print "You equip %s" % name
+    power += item.bonus
+    item.equipped = True
+
+def unequip(name):
+    global power, free_hands
+    name = ' '.join(name)
+    item = get_inv_item(name, True)
+    if not item:
+        print "You got no %s" % name
+        return
+
+    if not item.equipped:
+        print "%s is already unequipped" % name
+        return
+
+    print "You put %s to your backpack" % name
+    item.equipped = False
+    power -= item.bonus
+    if item.need_hands:
+        free_hands += item.need_hands
+    else:
+        slots[item.slot] = None
+
 COMMANDS = {
     CMD_GO: move_to,
-    CMD_FIGHT: None,
     CMD_LOOK: print_room,
     CMD_INV: print_inventory,
-    CMD_HELP: print_actions
+    CMD_HELP: print_actions,
+    CMD_ITEM: examine,
+    CMD_EQUIP: equip,
+    CMD_UNEQUIP: unequip,
 }
 
 def do_turn():
@@ -226,16 +343,16 @@ def do_turn():
     print
 
     act = action.pop(0)
-    if COMMANDS[act] and callable(COMMANDS[act]):
+    try:
         COMMANDS[act](action)
-    else:
+    except KeyError:
         print "You have no idea how to do that"
 
 if __name__ == "__main__":
     with open("game.conf") as conf:
         for line in conf.readlines():
             (name, val) = map(lambda s: s.strip(), line.split('='))
-            if name == 'treasures':
+            if name in ['treasures', 'monsters', 'curses']:
                 for tfile in val.split(','):
                     execfile(tfile.strip())
 
