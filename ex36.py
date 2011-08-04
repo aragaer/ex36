@@ -42,6 +42,18 @@ def nice_print_list(l):
     else:
         return " and ".join(l)
 
+def nice_parse_list(n):
+    if type(n).__name__ == 'list':
+        n = ' '.join(n)
+    try:
+        (n, tail) = n.split('and')
+        n = n.split(',')
+        n.append(tail)
+    except ValueError: # no 'and'
+        n = n.split(',')
+
+    return map(lambda x: x.strip(), n)
+
 def debug(string):
     if dbg:
         print "DBG:", string
@@ -269,12 +281,15 @@ def examine(name):
     else:
         print "It is worth nothing"
 
-def equip(name):
+def equip(name_parts):
+    for name in nice_parse_list(name_parts):
+        do_equip(name.strip())
+
+def do_equip(name):
     global power, free_hands
-    name = ' '.join(name)
     item = get_inv_item(name, False)
     if not item:
-        print "You got no %s" % name
+        print "You got no %s to equip" % name
         return
 
     if item.equipped:
@@ -311,12 +326,15 @@ def equip(name):
     power += item.bonus
     item.equipped = True
 
-def unequip(name):
+def unequip(name_parts):
+    for name in nice_parse_list(name_parts):
+        do_unequip(name.strip())
+
+def do_unequip(name):
     global power, free_hands
-    name = ' '.join(name)
     item = get_inv_item(name, True)
     if not item:
-        print "You got no %s" % name
+        print "You got no %s to unequip" % name
         return
 
     if not item.equipped:
@@ -331,12 +349,15 @@ def unequip(name):
     else:
         slots[item.slot] = None
 
-def sell(name):
+def sell(name_parts):
+    for name in nice_parse_list(name_parts):
+        do_sell(name.strip())
+
+def do_sell(name):
     global gold, level, inventory
-    name = ' '.join(name)
     item = get_inv_item(name, False)
     if not item:
-        print "You got no %s" % name
+        print "You got no %s to sell" % name
         return
 
     if item.equipped:
@@ -348,7 +369,7 @@ def sell(name):
     inventory.remove(item)
     gold += item.cost
 
-    print "Sold! You have %d gold now" % gold
+    print "Sold %s! You have %d gold now" % (name, gold)
 
     if levels == 1:
         print "You go up a level"
