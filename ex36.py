@@ -71,7 +71,7 @@ class EquipmentTreasure:
         self.equipped = False
     def __str__(self):
         if self.equipped:
-            return self.name + '(equipped)'
+            return self.name + ' (equipped)'
         else:
             return self.name
 
@@ -146,10 +146,7 @@ class Room:
 
         if entrance:
             obstacle = random.choice([MONSTERS, CURSES, None])
-            if not obstacle:
-                self.obstacle = None
-            else:
-                self.obstacle = random.choice(obstacle)
+            self.obstacle = random.choice(obstacle) if obstacle else None
         else:                                           # starting room must be empty
             self.obstacle = None
 
@@ -177,7 +174,7 @@ def print_inventory(unused = None):
 def get_treasure(number):
     global inventory
     new_stuff = []
-    while (number):
+    while number:
         sample = min(number, len(TREASURES))
         new_stuff += random.sample(TREASURES, sample)
         number -= sample    
@@ -203,6 +200,7 @@ CMD_HELP = 'help'
 CMD_ITEM = 'examine'
 CMD_EQUIP = 'equip'
 CMD_UNEQUIP = 'unequip'
+CMD_SELL = 'sell'
 
 def print_actions(unused):
     print "You can do the following:"
@@ -224,7 +222,12 @@ def move_to(d):
         return
 
     if d not in current_room.doors:
-        print "You bump into a wall."
+        if d == 'up':
+            print "You jump for a while."
+        elif d == 'down':
+            print "You stomp for a while."
+        else:
+            print "You bump into a wall."
         return
 
     try:
@@ -328,6 +331,30 @@ def unequip(name):
     else:
         slots[item.slot] = None
 
+def sell(name):
+    global gold, level, inventory
+    name = ' '.join(name)
+    item = get_inv_item(name, False)
+    if not item:
+        print "You got no %s" % name
+        return
+
+    if item.equipped:
+        print "%s is equipped" % name
+        return
+
+    levels = (gold + item.cost) // 1000 - gold // 1000
+
+    inventory.remove(item)
+    gold += item.cost
+
+    print "Sold! You have %d gold now" % gold
+
+    if levels == 1:
+        print "You go up a level"
+    elif levels:
+        print "You go up %d levels" % levels
+
 COMMANDS = {
     CMD_GO: move_to,
     CMD_LOOK: print_room,
@@ -336,6 +363,7 @@ COMMANDS = {
     CMD_ITEM: examine,
     CMD_EQUIP: equip,
     CMD_UNEQUIP: unequip,
+    CMD_SELL: sell
 }
 
 def do_turn():
