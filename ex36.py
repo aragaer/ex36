@@ -265,11 +265,7 @@ If equipped is not none and we can't find it, find the one ignoring the flag."""
 
     return None
 
-def examine(name_parts):
-    for name in nice_parse_list(name_parts):
-        do_examine(name.strip())
-
-def do_examine(name):
+def examine(name):
     item = get_inv_item(name)
     if not item:
         print "You don't have any %s to examine" % name
@@ -287,11 +283,7 @@ def do_examine(name):
         print "It is worth nothing"
     print
 
-def equip(name_parts):
-    for name in nice_parse_list(name_parts):
-        do_equip(name.strip())
-
-def do_equip(name):
+def equip(name):
     global power, free_hands
     item = get_inv_item(name, False)
     if not item:
@@ -332,11 +324,7 @@ def do_equip(name):
     power += item.bonus
     item.equipped = True
 
-def unequip(name_parts):
-    for name in nice_parse_list(name_parts):
-        do_unequip(name.strip())
-
-def do_unequip(name):
+def unequip(name):
     global power, free_hands
     item = get_inv_item(name, True)
     if not item:
@@ -355,11 +343,7 @@ def do_unequip(name):
     else:
         slots[item.slot] = None
 
-def sell(name_parts):
-    for name in nice_parse_list(name_parts):
-        do_sell(name.strip())
-
-def do_sell(name):
+def sell(name):
     global gold, level, inventory
     item = get_inv_item(name, False)
     if not item:
@@ -386,15 +370,18 @@ def do_sell(name):
     elif levels:
         print "You go up %d levels" % levels
 
+def mass(func):
+    return lambda names: [func(name) for name in nice_parse_list(names)]
+
 COMMANDS = {
     CMD_GO: move_to,
     CMD_LOOK: print_room,
     CMD_INV: print_inventory,
     CMD_HELP: print_actions,
-    CMD_ITEM: examine,
-    CMD_EQUIP: equip,
-    CMD_UNEQUIP: unequip,
-    CMD_SELL: sell
+    CMD_ITEM: mass(examine),
+    CMD_EQUIP: mass(equip),
+    CMD_UNEQUIP: mass(unequip),
+    CMD_SELL: mass(sell)
 }
 
 def do_turn():
